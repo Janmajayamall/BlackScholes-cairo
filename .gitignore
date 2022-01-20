@@ -1,0 +1,10 @@
+
+.DS_Store
+
+artifacts/
+env
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
