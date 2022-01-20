@@ -15,6 +15,7 @@ from safe_math import (
 # 1e27
 
 const RC_BOUND = 2 ** 128
+
 @view
 func multiply_decimal_round_precise{
 
