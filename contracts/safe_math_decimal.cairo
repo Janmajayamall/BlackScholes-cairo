@@ -18,7 +18,7 @@ const RC_BOUND = 2 ** 128
 
 @view
 func multiply_decimal_round_precise{
-
+    
     }(x: felt, y:felt) -> (z: felt):
     let z: felt = safe_mul(x, y) / (PRECISION / 10)
 end

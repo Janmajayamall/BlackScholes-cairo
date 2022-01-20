@@ -8,7 +8,7 @@ from starkware.cairo.common.math_cmp import (
     is_not_zero, is_nn, is_le, is_nn_le, is_in_range, is_le_felt
 )
 from starkware.cairo.common.math import (
-    assert_nn, sqrt
+    assert_nn
 )
 from safe_math import (
     safe_add, safe_mul, multiply_decimal_round_precise, divide_decimal_round_precise, check_rc_bound
@@ -22,7 +22,8 @@ const HIGH_PRECISION_DIV_10 = 10 ** 26
 const HIGH_PRECISION_TIMES_10 = 10 ** 28
 const PRECISION = 10 ** 18
 
-const MIN_EXP = -63 * HIGH_PRECISION
+const MIN_EXP = -64 * HIGH_PRECISION
+consnt SQRT_TWOPI = 2506628274631000502415765285
 
 func ln{range_check_ptr}(value: felt) -> (res: felt):
     alloc_locals
@@ -71,15 +72,28 @@ func _exp{range_check_ptr}(value: felt) -> (res: felt):
             s_exp_times_10 += 10
         s_exp = s_exp_times_10 // 10
 
-        ids.exp = s_exp
+        ids.exp = int(s_exp)
+
+        assert 0 <= ids.exp < range_check_builtin.bound
     %}
     return (res=exp)
 end
 
 func exp{range_check_ptr}(value: felt) -> (res: felt):
-
-    
-    return ()
+    let nn: felt = is_nn(value)
+    if nn == 1:
+        let res: felt = _exp(value)
+        return(res)
+    else:
+        let is_min: felt = is_le(value, MIN_EXP)
+        if is_min == 1:
+            return(0)
+        else:
+            let pos_res: felt = _exp(value * -1)
+            let res: felt = divide_decimal_round_precise(HIGH_PRECISION, pos_res)
+            return(res)
+        end
+    end
 end
 
 func sqrt_precise{
@@ -90,11 +104,19 @@ func sqrt_precise{
     check_rc_bound(value)
 
     let value_times_precision: felt = safe_mul(value, HIGH_PRECISION)
-    let root: felt = sqrt(value_times_precision)
+    let root: felt = _sqrt(value_times_precision)
     return(root)
 end
 
-
+func std_normal{
+        range_check_ptr
+    }(x: felt) -> (res: felt):
+    let (x_div_2, r): felt = safe_div(x, 2)
+    let (x_and_half): felt = multiply_decimal_round_precise(x, x_div_2)
+    let (x_exp): felt = exp(-1 * x_and_half)
+    let (res): felt = divide_decimal_round_precise(x_exp, SQRT_TWOPI)
+    return(res)
+end
 
 @external
 func d1d2{
