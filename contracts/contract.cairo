@@ -222,5 +222,54 @@ func d1d2{
     return (d1, d2)
 end
 
-# @external
-# func
+@external
+func optionPrices{
+        range_check_ptr
+    }(
+        tAnnualised: felt,
+        volatility: felt,
+        spot: felt,
+        strike: felt,
+        rate: felt
+    ) -> (call_price: felt, put_price: felt):
+    alloc_locals
+
+    # TODO check input values
+
+    # d1 d2
+    let (local d1, local d2) = d1d2(tAnnualised, volatility, spot, strike, rate)
+
+    # calc strikePv
+    let rate_mul_tA: felt = multiply_decimal_round_precise(-1*rate, tAnnualised)
+    let exp_rate_mul_tA: felt = exp(rate_mul_tA)
+    let (local strike_pv: felt) = multiply_decimal_round_precise(strike, exp_rate_mul_tA)
+
+    # calc spotNd1
+    let s_cdf_d1: felt = std_normal_cdf(d1)
+    let (local spotN_d1: felt) = multiply_decimal_round_precise(spot, s_cdf_d1)
+
+    # calc strikeNd2
+    let s_cdf_d2: felt = std_normal_cdf(d2)
+    let (local strikeN_d2: felt) = multiply_decimal_round_precise(strike_pv, s_cdf_d2)
+
+    let is_nd2_le_nd1: felt  = is_le(strikeN_d2, spotN_d1)
+    if is_nd2_le_nd1 == 1:
+        let (local _call: felt) = safe_add(spotN_d1, -1 * strikeN_d2)
+        let inter_put: felt safe_add(_call, strike_pv)
+        let _is_spot_le_put: felt = is_le(spot, inter_put)
+        if _is_spot_le_put == 1:
+            let put: felt = safe_add(put, -1 * spot)
+            return (_call, put)
+        else:
+            return (_call, 0)
+        end
+    else:
+        let _is_spot_le_strike_pv: felt = is_le(spot, strike_pv)
+        if _is_spot_le_strike_pv == 1:
+            let put: felt = safe_add(strike_pv, -1 * spot)
+            return (0, put)
+        else:
+            return (0, 0)
+        end
+    end
+end
