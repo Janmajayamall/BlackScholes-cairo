@@ -120,7 +120,7 @@ end
 
 @external
 func d1d2{
-
+        range_check_ptr
     }(
         tAnnualised: felt,
 		volatility: felt,
@@ -131,5 +131,29 @@ func d1d2{
         d1: felt,
         d2: felt
     ):
+
+    alloc_locals
+
+    # TODO check value bounds
     # take care of precision checks
+
+    let sqrt_tA: felt = sqrt_precise(tAnnualised)
+    let (local vt_sqrt: felt) = multiply_decimal_round_precise(volatility, sqrt_tA)
+    let spot_over_strike: felt = divide_decimal_round_precise(spot, strike)
+    let (local log: felt) = ln(spot_over_strike)
+
+    # calc v2t
+    let v_over_2: felt = safe_div(volatility, 2)
+    let v_and_half: felt = multiply_decimal_round_precise(volatility, v_over_2)
+    let v_plus_rate: felt = safe_add(v_and_half, rate)
+    let (local v2t: felt) = multiply_decimal_round_precise(v_plus_rate, tAnnualised)
+
+    # calc d1
+    let log_plus_v2: felt = safe_add(log, v2t)
+    let (local d1: felt) = divide_decimal_round_precise(log_plus_v2, vt_sqrt)
+
+    # calc d2
+    let d2: felt = safe_add(d1, -1 * vt_sqrt)
+
+    return (d1, d2)
 end
