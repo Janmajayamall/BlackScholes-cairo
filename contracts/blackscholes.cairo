@@ -7,9 +7,9 @@ from starkware.cairo.common.math_cmp import (
     is_not_zero, is_nn, is_le, is_nn_le, is_in_range, is_le_felt
 )
 from starkware.cairo.common.math import (
-    assert_nn, abs_value, sqrt
+    assert_nn, abs_value, sqrt, signed_div_rem
 )
-from safe_math import (
+from contracts.safe_math import (
     safe_add, safe_mul, safe_div, multiply_decimal_round_precise, divide_decimal_round_precise, check_rc_bound
 )
 
@@ -27,49 +27,67 @@ const SQRT_TWOPI = 2506628274631000502415765285
 const MIN_CDF_STD_DIST_INPUT = HIGH_PRECISION_DIV_10 * -45  # -4.5 
 const MAX_CDF_STD_DIST_INPUT = HIGH_PRECISION_TIMES_10
 
+const MIN_T_ANNUALISED = 31709791983764586504
+const MIN_VOLATILITY = 10 ** 23
+
 func ln{range_check_ptr}(value: felt) -> (res: felt):
     alloc_locals
+    
     local ln : felt
+    local is_ln_neg: felt
     %{
         from math import log
         from starkware.cairo.common.math_utils import assert_integer
+
         assert_integer(ids.value)
-        assert 0 < ids.value < range_check_builtin.bound
+        _value = as_int(ids.value, PRIME)
+        assert 0 < _value
 
         # unscale value
-        u_value = ids.value / (10 ** 27)
+        u_value = _value / (10 ** 27)
 
         # calc
         _ln = log(u_value)
 
         # scale ln
         s_ln_times_10 = _ln * (10 ** 28)
+
+        # avoid math.floor or ceil to get
+        # more accuracy
         if s_ln_times_10 % 10 >= 5:
             s_ln_times_10 += 10
         s_ln = s_ln_times_10 // 10
 
-        ids.ln = int(s_ln)
+        ids.is_ln_neg = 1 if s_ln < 0 else 0
+        
+        ids.ln = int(abs(s_ln))
     %}
-    return (res=ln)
+    if is_ln_neg == 1:
+        return(-1 * ln)
+    else:
+        return(ln)
+    end
 end
 
-func _exp{range_check_ptr}(value: felt) -> (res: felt):
+func exp{range_check_ptr}(value: felt) -> (res: felt):
     alloc_locals
     local exp : felt
     %{
         from math import exp
-        from starkware.cairo.common.math_utils import assert_integer
+        from starkware.cairo.common.math_utils import assert_integer, as_int
+        
         assert_integer(ids.value)
-        assert 0 <= ids.value < range_check_builtin.bound
-
+        _value = as_int(ids.value, PRIME)
+        
         # unscale value
-        u_value = ids.value / (10 ** 27)
-
+        u_value = _value / (10 ** 27)
+        
         # calc
         i_exp = exp(u_value)
-
+            
         # scale exp
         s_exp_times_10 = i_exp * (10 ** 28)
+        
         if s_exp_times_10 % 10 >= 5:
             s_exp_times_10 += 10
         s_exp = s_exp_times_10 // 10
@@ -81,31 +99,21 @@ func _exp{range_check_ptr}(value: felt) -> (res: felt):
     return (res=exp)
 end
 
-func exp{range_check_ptr}(value: felt) -> (res: felt):
-    let nn: felt = is_nn(value)
-    if nn == 1:
-        let res: felt = _exp(value)
-        return(res)
-    else:
-        let is_min: felt = is_le(value, MIN_EXP)
-        if is_min == 1:
-            return(0)
-        else:
-            let pos_res: felt = _exp(value * -1)
-            let res: felt = divide_decimal_round_precise(HIGH_PRECISION, pos_res)
-            return(res)
-        end
-    end
-end
-
+@external
 func sqrt_precise{
         range_check_ptr
     }(value: felt) -> (root: felt):
     # should not be -ve
-    assert_nn(value)
-    check_rc_bound(value)
+    # assert_nn(value)
+    # check_rc_bound(value)
+
+    # let x: felt = 1809251394333065606848661391547535052811553607665798349986546028067936010230
+    # # let d: felt = multiply_decimal_round_precise(x, -1*x)
+    
+    # return(x * 100)
 
     let value_times_precision: felt = safe_mul(value, HIGH_PRECISION)
+    # let (f, d) = signed_div_rem(value * HIGH_PRECISION, 2, 2 ** 127 - 1)
     let root: felt = sqrt(value_times_precision)
     return(root)
 end
@@ -198,29 +206,152 @@ func d1d2{
 
     alloc_locals
 
-    # TODO check value bounds
-    # take care of precision checks
+    let tA_min: felt = is_le(tAnnualised, MIN_T_ANNUALISED - 1)
+    if tA_min == 1:
+        return d1d2(MIN_T_ANNUALISED, volatility, spot, strike, rate)
+    end
+
+    let vol_min: felt = is_le(volatility, MIN_VOLATILITY - 1)
+    if vol_min == 1:
+        return d1d2(MIN_T_ANNUALISED, volatility, spot, strike, rate)
+    end
+
+    # calc v2t
+    let v_sq: felt = multiply_decimal_round_precise(volatility, volatility)
+    let v_sq_over_2: felt = safe_div(v_sq, 2)
+    let v_plus_rate: felt = safe_add(v_sq_over_2, rate)
+    let (local v2t: felt) = multiply_decimal_round_precise(v_plus_rate, tAnnualised)
 
     let sqrt_tA: felt = sqrt_precise(tAnnualised)
     let (local vt_sqrt: felt) = multiply_decimal_round_precise(volatility, sqrt_tA)
     let spot_over_strike: felt = divide_decimal_round_precise(spot, strike)
-    let (local log: felt) = ln(spot_over_strike)
-
-    # calc v2t
-    let v_over_2: felt = safe_div(volatility, 2)
-    let v_and_half: felt = multiply_decimal_round_precise(volatility, v_over_2)
-    let v_plus_rate: felt = safe_add(v_and_half, rate)
-    let (local v2t: felt) = multiply_decimal_round_precise(v_plus_rate, tAnnualised)
+    let log: felt = ln(spot_over_strike)
 
     # calc d1
     let log_plus_v2: felt = safe_add(log, v2t)
     let (local d1: felt) = divide_decimal_round_precise(log_plus_v2, vt_sqrt)
 
     # calc d2
-    let d2: felt = safe_add(d1, -1 * vt_sqrt)
+    let d2: felt = d1 - vt_sqrt
 
     return (d1, d2)
 end
+
+@external
+func delta{
+        range_check_ptr
+    }(
+        tAnnualised: felt,
+		volatility: felt,
+		spot: felt,
+		strike: felt,
+		rate: felt
+    ) -> (
+        call_delta: felt,
+        put_delta: felt
+    ):
+    alloc_locals
+
+    let (local d1, _) = d1d2(tAnnualised, volatility, spot, strike, rate)
+    let (local call_delta: felt) = std_normal_cdf(d1)
+    let put_delta: felt = safe_add(call_delta, -1 * HIGH_PRECISION)
+    return (call_delta, put_delta)
+end
+
+
+@external
+func gamma{
+        range_check_ptr
+    }(
+        tAnnualised: felt,
+		volatility: felt,
+		spot: felt,
+		strike: felt,
+		rate: felt
+    ) -> (
+        _gamma: felt
+    ):
+    alloc_locals
+
+    let (local d1, _) = d1d2(tAnnualised, volatility, spot, strike, rate)
+    let (local s_n_d1: felt) = std_normal(d1)
+
+     let tA_sqrt: felt = sqrt_precise(tAnnualised)
+     let spot_times_ta_sqrt: felt = multiply_decimal_round_precise(spot, tA_sqrt)
+     let v_spot_times_ta_sqrt: felt = multiply_decimal_round_precise(volatility, spot_times_ta_sqrt)
+
+    let _gamma: felt = divide_decimal_round_precise(s_n_d1, v_spot_times_ta_sqrt)
+    return (_gamma)
+end
+
+
+@external
+func vega{
+        range_check_ptr
+    }(
+        tAnnualised: felt,
+		volatility: felt,
+		spot: felt,
+		strike: felt,
+		rate: felt
+    ) -> (
+        _vega: felt
+    ):
+    alloc_locals
+    let (local d1, _) = d1d2(tAnnualised, volatility, spot, strike, rate)
+    let std_d1: felt = std_normal(d1)
+    let (local std_d1_times_spot: felt) = multiply_decimal_round_precise(std_d1, spot)
+    
+    let tA_sqrt: felt = sqrt_precise(tAnnualised)
+    let _vega: felt = multiply_decimal_round_precise(tA_sqrt, std_d1_times_spot)
+    return (_vega)
+end
+
+
+@external
+func rho{
+        range_check_ptr
+    }(
+        tAnnualised: felt,
+		volatility: felt,
+		spot: felt,
+		strike: felt,
+		rate: felt
+    ) -> (
+        call_rho: felt,
+        put_rho: felt
+    ):
+    alloc_locals
+
+    let (local s_t: felt) = multiply_decimal_round_precise(strike, tAnnualised)
+    let r_t: felt = multiply_decimal_round_precise(rate, tAnnualised)
+    let exp_rt: felt = exp(-1 * r_t)
+    let (local inter: felt) = multiply_decimal_round_precise(s_t, exp_rt)
+
+    # cdfs
+    let (_, local d2: felt) = d1d2(tAnnualised, volatility, spot, strike, rate)
+    let (local d2_cdf: felt) = std_normal_cdf(d2)
+    let (local d2_neg_cdf: felt) = std_normal_cdf(d2 * -1)
+
+    let (local call_rho: felt) = multiply_decimal_round_precise(inter, d2_cdf)
+    let put_rho: felt = multiply_decimal_round_precise(inter, d2_neg_cdf)
+
+    return (call_rho, -1 * put_rho)
+end
+
+
+# @external 
+# func theta{
+#         range_check_ptr
+#     }(
+# 		tAnnualised: felt,
+#         volatility: felt,
+#         spot: felt,
+#         strike: felt,
+#         rate: felt
+#   ) -> (call_theta: felt, put_theta: felt)
+    
+# end
 
 @external
 func optionPrices{
@@ -254,11 +385,11 @@ func optionPrices{
 
     let is_nd2_le_nd1: felt  = is_le(strikeN_d2, spotN_d1)
     if is_nd2_le_nd1 == 1:
-        let (local _call: felt) = safe_add(spotN_d1, -1 * strikeN_d2)
-        let inter_put: felt safe_add(_call, strike_pv)
+        let (local _call: felt) = spotN_d1 - strikeN_d2 # replace this with safe add
+        let inter_put: felt = safe_add(_call, strike_pv)
         let _is_spot_le_put: felt = is_le(spot, inter_put)
         if _is_spot_le_put == 1:
-            let put: felt = safe_add(put, -1 * spot)
+            let put: felt = inter_put - spot # replace this with safe add
             return (_call, put)
         else:
             return (_call, 0)
@@ -266,7 +397,7 @@ func optionPrices{
     else:
         let _is_spot_le_strike_pv: felt = is_le(spot, strike_pv)
         if _is_spot_le_strike_pv == 1:
-            let put: felt = safe_add(strike_pv, -1 * spot)
+            let put: felt = strike_pv - spot # replace this with safe add
             return (0, put)
         else:
             return (0, 0)
