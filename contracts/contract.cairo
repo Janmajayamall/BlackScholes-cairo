@@ -5,7 +5,7 @@
 
 from starkware.cairo.common.cairo_builtins import HashBuiltin
 from starkware.cairo.common.math_cmp import (
-    is_not_zero, is_nn, is_le, is_nn_le, is_in_range, is_le_felt
+    is_not_zero, is_nn, is_le, is_nn_le, is_in_range, is_le_felt, abs_value
 )
 from starkware.cairo.common.math import (
     assert_nn
@@ -23,7 +23,10 @@ const HIGH_PRECISION_TIMES_10 = 10 ** 28
 const PRECISION = 10 ** 18
 
 const MIN_EXP = -64 * HIGH_PRECISION
-consnt SQRT_TWOPI = 2506628274631000502415765285
+const SQRT_TWOPI = 2506628274631000502415765285
+
+const MIN_CDF_STD_DIST_INPUT = HIGH_PRECISION_DIV_10 * -45  # -4.5 
+const MAX_CDF_STD_DIST_INPUT = HIGH_PRECISION_TIMES_10
 
 func ln{range_check_ptr}(value: felt) -> (res: felt):
     alloc_locals
@@ -118,6 +121,46 @@ func std_normal{
     return(res)
 end
 
+func std_normal_cdf{
+        range_check_ptr
+    }(x: felt) -> (res: felt):
+    alloc_locals
+
+    # TODO check range
+
+    let min_return: felt = is_le(x, MIN_CDF_STD_DIST_INPUT - 1)
+    if min_return == 1:
+        return(0)
+    end
+
+    let max_return: felt = is_le(MAX_CDF_STD_DIST_INPUT + 1, x)
+    if max_return == 1:
+        return(0)
+    end
+
+    let abs_x: felt = abs_value(x)
+    let (local t1: felt) = safe_add(10 ** 7, multiply_decimal_round_precise(2315419, abs_x))
+    let exponent: felt = multiply_decimal_round_precise(x, safe_div(x, 2))
+    let d: felt = divide_decimal_round_precise(3989423, exp(exponent))
+
+    # calc prob
+    let (first_div, f_r): felt = safe_div(safe_mul(13302740, 10 ** 7), t1)
+    let (second_div, s_r): felt = safe_div(safe_mul(safe_add(first_div, -18212560), 10 ** 7), t1)
+    let (third_div, t_r): felt = safe_div(safe_mul(safe_add(second_div, 17814780), 10 ** 7), t1)
+    let (fourth_div, f_r): felt = safe_div(safe_mul(safe_add(third_div, -3565638), 10 ** 7), t1)
+    let (prob_num): felt = safe_mul(safe_mul(safe_add(fourth_div, 3193815), 10 ** 7), d)
+    let (local prob: felt) = safe_div(prob_num, t1)
+
+    let is_x_negative: felt = is_le(x, -1)
+    if is_x_negative == 0:
+        let f_prob: felt = divide_decimal_round_precise(safe_add(10 ** 14, -1 * prob), 10 ** 14)
+        return(f_prob)
+    else:
+        let f_prob: felt = divide_decimal_round_precise(safe_add(10 ** 14, -1 * prob), 10 ** 14)
+        return(f_prob)
+    end
+end
+
 @external
 func d1d2{
         range_check_ptr
@@ -157,3 +200,6 @@ func d1d2{
 
     return (d1, d2)
 end
+
+@external
+func
