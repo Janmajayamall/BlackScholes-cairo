@@ -516,6 +516,7 @@ func theta{
         rate: felt
   ) -> (call_theta: felt, put_theta: felt):
     alloc_locals
+
     let (local d1, local d2) = d1d2(tAnnualised, volatility, spot, strike, rate)
     
     # first half
@@ -559,12 +560,12 @@ func option_prices{
     alloc_locals
 
     # makes sure necessary values are +ve
-    check_input_sanity(
-        tAnnualised,
-		volatility,
-		spot,
-		strike
-    )
+    # check_input_sanity(
+    #     tAnnualised,
+	# 	volatility,
+	# 	spot,
+	# 	strike
+    # )
 
     # d1 d2
     let (local d1, local d2) = d1d2(tAnnualised, volatility, spot, strike, rate)
