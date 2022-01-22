@@ -12,7 +12,7 @@ from random import seed
 from random import uniform
 import asyncio
 import time
-
+seed(1)
 # The path to the contract source code.
 CONTRACT_FILE = os.path.join("contracts", "blackscholes.cairo")
 
@@ -116,23 +116,6 @@ async def run_test_iteration(contract, index):
 
     # print('\n')
 
-    # theta
-    # res = await contract.theta(
-    #     tAnnualised=scale_to_high_precision(tAnnualised),
-    #     volatility=scale_to_high_precision(volatility),
-    #     spot=scale_to_high_precision(spot),
-    #     strike=scale_to_high_precision(strike),
-    #     rate=scale_to_high_precision(rate)
-    # ).invoke()
-    # c_call = str(felt_to_decimal(res.result.call_theta))
-    # c_put = str(felt_to_decimal(res.result.put_theta))
-    # print("theta")
-    # print(c_call, c_put)
-    # res = calc_theta(spot,strike,tAnnualised,rate, volatility)
-    # print(res[0], res[1])
-
-    # print('\n')
-
     # d1d2
     # res = await contract.d1d2(
     #     tAnnualised=scale_to_high_precision(tAnnualised),
@@ -211,6 +194,25 @@ async def run_test_iteration(contract, index):
     # print(c_call_delta, c_put_delta)
     # res = calc_delta(spot,strike,tAnnualised,rate, volatility)
     # print(res[0], res[1])
+
+
+    # theta
+    # res = await contract.theta(
+    #     tAnnualised=scale_to_high_precision(tAnnualised),
+    #     volatility=scale_to_high_precision(volatility),
+    #     spot=scale_to_high_precision(spot),
+    #     strike=scale_to_high_precision(strike),
+    #     rate=scale_to_high_precision(rate)
+    # ).invoke()
+    # c_call = str(felt_to_decimal(res.result.call_theta))
+    # c_put = str(felt_to_decimal(res.result.put_theta))
+    # print("theta")
+    # print(c_call, c_put)
+    # res = calc_theta(spot,strike,tAnnualised,rate, volatility)
+    # print(res[0], res[1])
+
+    # print('\n')
+
 
     print("\n")
 

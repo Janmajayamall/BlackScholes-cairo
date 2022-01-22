@@ -543,7 +543,6 @@ func theta{
     let _put_theta: felt = first_half + put_second_half
     let (put_theta, _) = safe_div(_put_theta, 365)
 
-    # return (0, 0)
     return (call_theta, put_theta)
 end
 
