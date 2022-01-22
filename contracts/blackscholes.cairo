@@ -4,17 +4,17 @@
 %builtins pedersen range_check
 
 from starkware.cairo.common.math_cmp import (
-    is_not_zero, is_nn, is_le, is_nn_le, is_in_range, is_le_felt
+    is_nn, is_le
 )
 from starkware.cairo.common.math import (
-    assert_nn, abs_value, sqrt, signed_div_rem, assert_le, assert_not_equal
+    abs_value, sqrt, assert_le, assert_250_bit
 )
 
 from starkware.cairo.common.pow import (
     pow
 )
 from contracts.safe_math import (
-    safe_add, safe_mul, safe_div, multiply_decimal_round_precise, divide_decimal_round_precise, check_rc_bound
+    safe_div, multiply_decimal_round_precise, divide_decimal_round_precise
 )
 
 const RC_BOUND = 2 ** 128
@@ -34,7 +34,23 @@ const MAX_CDF_STD_DIST_INPUT = HIGH_PRECISION_TIMES_10
 const MIN_T_ANNUALISED = 31709791983764586504
 const MIN_VOLATILITY = 10 ** 23
 
-func ln{range_check_ptr}(value: felt) -> (res: felt):
+# assumes that [0, 2**250) are +ve
+func check_input_sanity{range_check_ptr}(
+        tAnnualised: felt,
+		volatility: felt,
+		spot: felt,
+		strike: felt
+    ):
+    assert_250_bit(tAnnualised)
+    assert_250_bit(volatility)
+    assert_250_bit(spot)
+    assert_250_bit(strike)
+    return()
+end
+
+# ln funtions for fixed point numbers with hints (I think this is less accurate thatn ln() with halley's method)
+@external
+func ln_with_hints{range_check_ptr}(value: felt) -> (res: felt):
     alloc_locals
     
     local ln : felt
@@ -73,13 +89,72 @@ func ln{range_check_ptr}(value: felt) -> (res: felt):
     end
 end
 
+func _ln_helper{range_check_ptr}(x: felt, last_v: felt) -> (v: felt, break: felt):
 
+    let (exp_v: felt) = exp(last_v)
+    let x_sub_e: felt = x - exp_v
+    let x_plus_e: felt = x + exp_v
+    let s_div: felt = divide_decimal_round_precise(x_sub_e * 2, x_plus_e)
+    let v: felt = last_v + s_div
+
+    # check eq
+    let is_neq = last_v - v
+    if is_neq == 0:
+        return (v, 1)
+    else:
+        return (v, 0)
+    end
+
+end
+
+# ln with halley's method (I think this is more accurate than ln_with_hints)
+@external
+func ln{range_check_ptr}(value: felt) -> (res: felt):
+
+    let (v, b) = _ln_helper(value, 0)
+    if b == 1:
+        return (v)
+    end
+    let (v, b) = _ln_helper(value, v)
+    if b == 1:
+        return (v)
+    end
+    let (v, b) = _ln_helper(value, v)
+    if b == 1:
+        return (v)
+    end
+    let (v, b) = _ln_helper(value, v)
+    if b == 1:
+        return (v)
+    end
+    let (v, b) = _ln_helper(value, v)
+    if b == 1:
+        return (v)
+    end
+    let (v, b) = _ln_helper(value, v)
+    if b == 1:
+        return (v)
+    end
+    let (v, b) = _ln_helper(value, v)
+    if b == 1:
+        return (v)
+    end
+    let (v, b) = _ln_helper(value, v)
+    if b == 1:
+        return (v)
+    end
+
+    return (v)
+
+end
+
+@external
 func _exp_helper{range_check_ptr}(last_t:felt, r: felt, i: felt) -> (t: felt, break: felt):
     alloc_locals
 
     let (ri, _) = safe_div(r, i)
     let ri_times_last_t: felt = multiply_decimal_round_precise(ri, last_t)
-    local t: felt = ri_times_last_t + HIGH_PRECISION
+    let t: felt = ri_times_last_t + HIGH_PRECISION
 
     # check eq
     let is_neq = t - last_t
@@ -196,20 +271,12 @@ func exp{range_check_ptr}(x: felt) -> (res: felt):
     return (res)
 end
 
-@external
-func tester{
-        range_check_ptr
-    }(x: felt, y: felt) -> (res: felt):
-    let res: felt = divide_decimal_round_precise(x, y)
-    return(res)
-end
 
 @external
 func sqrt_precise{
         range_check_ptr
     }(value: felt) -> (root: felt):
-    let value_times_precision: felt = safe_mul(value, HIGH_PRECISION)
-    # let (f, d) = signed_div_rem(value * HIGH_PRECISION, 2, 2 ** 127 - 1)
+    let value_times_precision: felt = value * HIGH_PRECISION
     let root: felt = sqrt(value_times_precision)
     return(root)
 end
@@ -243,8 +310,6 @@ func std_normal_cdf{
         range_check_ptr
     }(x: felt) -> (res: felt):
     alloc_locals
-
-    # TODO check range
 
     let min_return: felt = is_le(x, MIN_CDF_STD_DIST_INPUT - 1)
     if min_return == 1:
@@ -449,7 +514,7 @@ func theta{
         spot: felt,
         strike: felt,
         rate: felt
-  ) -> (call_theta: felt, put_theta: felt)
+  ) -> (call_theta: felt, put_theta: felt):
     alloc_locals
     let (local d1, local d2) = d1d2(tAnnualised, volatility, spot, strike, rate)
     
@@ -465,21 +530,25 @@ func theta{
     let r_mul_tA: felt = multiply_decimal_round_precise(rate, tAnnualised)
     let exp_r_tA: felt = exp(-1 * r_mul_tA)
     let (local r_strike_exp_rtA: felt) = multiply_decimal_round_precise(r_mul_strike, exp_r_tA)
-    
+   
     # call second half
     let cdf_d2: felt = std_normal_cdf(d2)
     let call_second_half: felt = multiply_decimal_round_precise(r_strike_exp_rtA, cdf_d2)
-    let (local _call_theta: felt) = first_half - call_second_half 
+    let _call_theta: felt = first_half - call_second_half 
+    let (local call_theta, _) = safe_div(_call_theta, 365)
 
+    # put second half
     let cdf_d2_n: felt = std_normal_cdf(-1 * d2)
     let (put_second_half: felt) = multiply_decimal_round_precise(r_strike_exp_rtA, cdf_d2_n)
-    let (local _put_theta: felt) = first_half + put_second_half
+    let _put_theta: felt = first_half + put_second_half
+    let (put_theta, _) = safe_div(_put_theta, 365)
 
-    return (_call_theta, _put_theta)
+    # return (0, 0)
+    return (call_theta, put_theta)
 end
 
 @external
-func optionPrices{
+func option_prices{
         range_check_ptr
     }(
         tAnnualised: felt,
@@ -490,7 +559,13 @@ func optionPrices{
     ) -> (call_price: felt, put_price: felt):
     alloc_locals
 
-    # TODO check input values
+    # makes sure necessary values are +ve
+    check_input_sanity(
+        tAnnualised,
+		volatility,
+		spot,
+		strike
+    )
 
     # d1 d2
     let (local d1, local d2) = d1d2(tAnnualised, volatility, spot, strike, rate)

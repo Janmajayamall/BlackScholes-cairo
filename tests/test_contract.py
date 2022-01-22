@@ -1,4 +1,5 @@
 """contract.cairo test file."""
+from decimal import Decimal
 import os
 
 import pytest
@@ -9,21 +10,26 @@ from py_vollib.black_scholes.greeks.numerical import rho, gamma, theta, delta, v
 from py_vollib.ref_python.black import d1, d2
 from random import seed
 from random import uniform
-# seed(1)
+import asyncio
+import time
+
 # The path to the contract source code.
 CONTRACT_FILE = os.path.join("contracts", "blackscholes.cairo")
 
+PRIME = 2 ** 251 + 17 * 2 ** 192 + 1
+SCALE = 10 ** 27
 def scale_to_high_precision(val):
     # print(val)
-    return int(val * 10 ** 27)
+    return int(val * SCALE)
 
 def random_input():
     # 1 sec to 10 years
-    tAnnualised = uniform(0.00000003174, 10)
-    volatility=uniform(0.01, 0.95)
+    # tAnnualised = uniform(0.00000003174, 10)
+    tAnnualised = uniform(1, 10)
+    volatility=uniform(0.01, 0.3)
     rate=uniform(0, 0.5)
-    spot=uniform(100, 100000)
-    strike=uniform(100, 100000)
+    spot=uniform(100, 10000)
+    strike=uniform(100, 10000)
 
     return (
         tAnnualised,
@@ -32,6 +38,14 @@ def random_input():
         spot, 
         strike
     )
+
+def felt_to_decimal(felt):
+    if (felt > PRIME // 2):
+        return Decimal(felt - PRIME) / Decimal(SCALE)
+    return Decimal(felt) / Decimal(SCALE)
+
+def check(val1, val2):
+    assert abs(Decimal(val1) - Decimal(val2)) < Decimal(0.001)
 
 def calc_option_prices(spot,strike,tAnnualised,rate, volatility):
     call = black_scholes('c',spot,strike,tAnnualised,rate, volatility) 
@@ -61,8 +75,16 @@ def calc_d1d2(spot,strike,tAnnualised,rate, volatility):
     _d2 = d2(spot,strike,tAnnualised,rate, volatility)
     return (_d1, _d2)
 
+def calc_theta(spot,strike,tAnnualised,rate, volatility):
+    call_theta = theta('c',spot,strike,tAnnualised,rate, volatility)
+    put_theta = theta('p',spot,strike,tAnnualised,rate, volatility)
+    return (call_theta, put_theta)
+
 @pytest.mark.asyncio
-async def run_test_iteration(contract):
+async def run_test_iteration(contract, index):
+    # iterations run simultaneously, this makes sure sur they run sequentially
+    await asyncio.sleep(index)
+
     input = random_input()
     tAnnualised=input[0]
     volatility=input[1]
@@ -70,101 +92,125 @@ async def run_test_iteration(contract):
     spot=input[3]
     strike=input[4]
 
+    print("\n\n")
+    print(input, "\n")
+    
+
     # option prices
-    res = await contract.optionPrices(
+    res = await contract.option_prices(
         tAnnualised=scale_to_high_precision(tAnnualised),
         volatility=scale_to_high_precision(volatility),
         spot=scale_to_high_precision(spot),
         strike=scale_to_high_precision(strike),
         rate=scale_to_high_precision(rate)
     ).invoke()
-    c_call = res.result.call_price
-    c_put = res.result.put_price
+    c_call = str(felt_to_decimal(res.result.call_price))
+    c_put = str(felt_to_decimal(res.result.put_price))
+    print("option prices")
     print(c_call, c_put)
-    
     res = calc_option_prices(spot,strike,tAnnualised,rate, volatility)
     print(res[0], res[1])
 
-    print('\n')
+    # check(c_call, res[0])
+    # check(c_put, res[1])
+
+    # print('\n')
+
+    # theta
+    # res = await contract.theta(
+    #     tAnnualised=scale_to_high_precision(tAnnualised),
+    #     volatility=scale_to_high_precision(volatility),
+    #     spot=scale_to_high_precision(spot),
+    #     strike=scale_to_high_precision(strike),
+    #     rate=scale_to_high_precision(rate)
+    # ).invoke()
+    # c_call = str(felt_to_decimal(res.result.call_theta))
+    # c_put = str(felt_to_decimal(res.result.put_theta))
+    # print("theta")
+    # print(c_call, c_put)
+    # res = calc_theta(spot,strike,tAnnualised,rate, volatility)
+    # print(res[0], res[1])
+
+    # print('\n')
 
     # d1d2
-    res = await contract.d1d2(
-        tAnnualised=scale_to_high_precision(tAnnualised),
-        volatility=scale_to_high_precision(volatility),
-        spot=scale_to_high_precision(spot),
-        strike=scale_to_high_precision(strike),
-        rate=scale_to_high_precision(rate)
-    ).invoke()
-    print(res.result.d1, res.result.d2)
-    
-    res = calc_d1d2(spot,strike,tAnnualised,rate, volatility)
-    print(res[0], res[1])
+    # res = await contract.d1d2(
+    #     tAnnualised=scale_to_high_precision(tAnnualised),
+    #     volatility=scale_to_high_precision(volatility),
+    #     spot=scale_to_high_precision(spot),
+    #     strike=scale_to_high_precision(strike),
+    #     rate=scale_to_high_precision(rate)
+    # ).invoke()
+    # print("d1d2")
+    # print(str(felt_to_decimal(res.result.d1)), str(felt_to_decimal(res.result.d2)))
+    # res = calc_d1d2(spot,strike,tAnnualised,rate, volatility)
+    # print(res[0], res[1])
 
-    print('\n')
+    # print('\n')
 
-    # rho
-    res = await contract.rho(
-        tAnnualised=scale_to_high_precision(tAnnualised),
-        volatility=scale_to_high_precision(volatility),
-        spot=scale_to_high_precision(spot),
-        strike=scale_to_high_precision(strike),
-        rate=scale_to_high_precision(rate)
-    ).invoke()
-    c_call_rho = res.result.call_rho
-    c_put_rho = res.result.put_rho
-    print(c_call_rho, c_put_rho)
+    # # rho
+    # res = await contract.rho(
+    #     tAnnualised=scale_to_high_precision(tAnnualised),
+    #     volatility=scale_to_high_precision(volatility),
+    #     spot=scale_to_high_precision(spot),
+    #     strike=scale_to_high_precision(strike),
+    #     rate=scale_to_high_precision(rate)
+    # ).invoke()
+    # c_call_rho = str(felt_to_decimal(res.result.call_rho))
+    # c_put_rho = str(felt_to_decimal(res.result.put_rho))
+    # print("rho")
+    # print(c_call_rho, c_put_rho)
+    # res = calc_rho(spot,strike,tAnnualised,rate, volatility)
+    # print(res[0], res[1])
 
-    res = calc_rho(spot,strike,tAnnualised,rate, volatility)
-    print(res[0], res[1])
+    # print('\n')
 
-    print('\n')
+    # # vega
+    # res = await contract.vega(
+    #     tAnnualised=scale_to_high_precision(tAnnualised),
+    #     volatility=scale_to_high_precision(volatility),
+    #     spot=scale_to_high_precision(spot),
+    #     strike=scale_to_high_precision(strike),
+    #     rate=scale_to_high_precision(rate)
+    # ).invoke()
+    # print("vega")
+    # c_vega = str(felt_to_decimal(res.result.vega))
+    # print(c_vega)
+    # res = calc_vega(spot,strike,tAnnualised,rate, volatility)
+    # print(res)
 
-    # vega
-    res = await contract.vega(
-        tAnnualised=scale_to_high_precision(tAnnualised),
-        volatility=scale_to_high_precision(volatility),
-        spot=scale_to_high_precision(spot),
-        strike=scale_to_high_precision(strike),
-        rate=scale_to_high_precision(rate)
-    ).invoke()
-    c_vega = res.result.vega
-    print(c_vega)
+    # print('\n')
 
-    res = calc_vega(spot,strike,tAnnualised,rate, volatility)
-    print(res)
+    # # gamma
+    # res = await contract.gamma(
+    #     tAnnualised=scale_to_high_precision(tAnnualised),
+    #     volatility=scale_to_high_precision(volatility),
+    #     spot=scale_to_high_precision(spot),
+    #     strike=scale_to_high_precision(strike),
+    #     rate=scale_to_high_precision(rate)
+    # ).invoke()
+    # c_gamma = str(felt_to_decimal(res.result.gamma))
+    # print("gamma")
+    # print(c_gamma)
+    # res = calc_gamma(spot,strike,tAnnualised,rate, volatility)
+    # print(res)
 
-    print('\n')
+    # print('\n')
 
-    # gamma
-    res = await contract.gamma(
-        tAnnualised=scale_to_high_precision(tAnnualised),
-        volatility=scale_to_high_precision(volatility),
-        spot=scale_to_high_precision(spot),
-        strike=scale_to_high_precision(strike),
-        rate=scale_to_high_precision(rate)
-    ).invoke()
-    c_gamma = res.result.gamma
-    print(c_gamma)
-
-    res = calc_gamma(spot,strike,tAnnualised,rate, volatility)
-    print(res)
-
-    print('\n')
-
-    # delta
-    res = await contract.delta(
-        tAnnualised=scale_to_high_precision(tAnnualised),
-        volatility=scale_to_high_precision(volatility),
-        spot=scale_to_high_precision(spot),
-        strike=scale_to_high_precision(strike),
-        rate=scale_to_high_precision(rate)
-    ).invoke()
-    c_call_delta = res.result.call_delta
-    c_put_delta = res.result.put_delta
-    print(c_call_delta, c_put_delta)
-
-    res = calc_delta(spot,strike,tAnnualised,rate, volatility)
-    print(res[0], res[1])
+    # # delta
+    # res = await contract.delta(
+    #     tAnnualised=scale_to_high_precision(tAnnualised),
+    #     volatility=scale_to_high_precision(volatility),
+    #     spot=scale_to_high_precision(spot),
+    #     strike=scale_to_high_precision(strike),
+    #     rate=scale_to_high_precision(rate)
+    # ).invoke()
+    # print("delta")
+    # c_call_delta = str(felt_to_decimal(res.result.call_delta))
+    # c_put_delta = str(felt_to_decimal(res.result.put_delta))
+    # print(c_call_delta, c_put_delta)
+    # res = calc_delta(spot,strike,tAnnualised,rate, volatility)
+    # print(res[0], res[1])
 
     print("\n")
 
@@ -172,8 +218,7 @@ async def run_test_iteration(contract):
 # The testing library uses python's asyncio. So the following
 # decorator and the ``async`` keyword are needed.
 @pytest.mark.asyncio
-async def test_increase_balance():
-    """Test increase_balance method."""
+async def test_function():
     # Create a new Starknet class that simulates the StarkNet
     # system.
     starknet = await Starknet.empty()
@@ -185,31 +230,7 @@ async def test_increase_balance():
         contract_def=compiled_contracts
     )
     
-    await run_test_iteration(contract)
-    # dq = await contract.d1d2(
-    #     tAnnualised=scale_to_high_precision(1),
-    #     volatility=(15 * 10 ** 25),
-    #     spot=scale_to_high_precision(300343),
-    #     strike=scale_to_high_precision(2502),
-    #     rate=(3 * 10 ** 25)
-    # ).invoke()
-    # d = await contract.std_normal_cdf(
-    #     x=32043898285580162156367708160,
-    # ).invoke()
-    # print(d)
+    coros = [run_test_iteration(contract, i) for i in range(10)]
+    await asyncio.gather(*coros)
 
-    # # lib
-    # call = black_scholes('c',spot,strike,tAnnualised,rate, volatility) 
-    # put = black_scholes('p',spot,strike,tAnnualised,rate,volatility) 
-    # print(call, put)
-
-    # print(dq)
     assert False
-    
-    # Invoke increase_balance() twice.
-    # await contract.increase_balance(amount=10).invoke()
-    # await contract.increase_balance(amount=20).invoke()
-
-    # # Check the result of get_balance().
-    # execution_info = await contract.get_balance().call()
-    # assert execution_info.result == (30,)
