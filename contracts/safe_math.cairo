@@ -7,7 +7,7 @@ from starkware.cairo.common.math_cmp import (
     is_le, is_nn
 )
 from starkware.cairo.common.math import (
-    abs_value, signed_div_rem
+    abs_value, signed_div_rem, assert_250_bit
 )
 
 const RC_BOUND = 2 ** 128
@@ -24,10 +24,12 @@ func check_rc_bound{
     return()
 end
 
+# Assumes that all +
 func safe_add{
         range_check_ptr
     }(x: felt, y: felt) -> (z: felt):
     let z: felt = x + y
+    # assert_250_bit(z)
     return (z)
 end
 
@@ -41,20 +43,12 @@ end
 func safe_div{
         range_check_ptr
     }(x: felt, y:felt) -> (q: felt, r: felt):
-    if y == 1:
-        return (x, 0)
-    end
-
-    if y == -1:
-        return (-1*x, 0)
-    end
-
     # we cannot pass -ve div to signed_div_rem
     let y_nn: felt = is_nn(y)
     if y_nn == 0:
         # switch signs of x & y (i.e. multiple num & denom by -1)
         let (q, r) = signed_div_rem(x * -1, y * -1, DIV_BOUND) 
-        return (q, r)
+        return (q, -1*r)
     else:
         let (q, r) = signed_div_rem(x, y, DIV_BOUND) 
         return (q, r)
@@ -84,9 +78,9 @@ func divide_decimal_round_precise{
     }(x: felt, y:felt) -> (z: felt):
     alloc_locals
 
-    let num_times_10: felt = safe_mul(x, HIGH_PRECISION_TIMES_10)
+    let num_times_10: felt = x * HIGH_PRECISION_TIMES_10
     let (x_times_10, _) = safe_div(num_times_10, y)
-    let (local x_mul, x_r) = safe_div(x_times_10, 10)
+    let (local x_mul, x_r) = signed_div_rem(x_times_10, 10, DIV_BOUND)
     let no_change: felt = is_le(x_r, 4)
     if no_change == 1:
         return(x_mul)

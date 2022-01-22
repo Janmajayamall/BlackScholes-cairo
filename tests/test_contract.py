@@ -28,16 +28,16 @@ async def test_increase_balance():
         contract_def=compiled_contracts
     )
 
-    d = await contract.d1d2(
-        tAnnualised=scale_to_high_precision(1),
-        volatility=(15 * 10 ** 25),
-        spot=scale_to_high_precision(300),
-        strike=scale_to_high_precision(250),
-        rate=(3 * 10 ** 25)
-    ).invoke()
-    # d = await contract.sqrt_precise(
-    #     value=scale_to_high_precision(1)
+    # d = await contract.d1d2(
+    #     tAnnualised=scale_to_high_precision(1),
+    #     volatility=(15 * 10 ** 25),
+    #     spot=scale_to_high_precision(300),
+    #     strike=scale_to_high_precision(250),
+    #     rate=(3 * 10 ** 25)
     # ).invoke()
+    d = await contract.exp(
+        value=100000000000000000,
+    ).invoke()
     print(d)
     assert False
     

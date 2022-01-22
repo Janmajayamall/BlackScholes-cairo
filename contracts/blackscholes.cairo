@@ -69,6 +69,7 @@ func ln{range_check_ptr}(value: felt) -> (res: felt):
     end
 end
 
+@external
 func exp{range_check_ptr}(value: felt) -> (res: felt):
     alloc_locals
     local exp : felt
@@ -100,6 +101,45 @@ func exp{range_check_ptr}(value: felt) -> (res: felt):
 end
 
 @external
+func exp{range_check_ptr}(value: felt) -> (res: felt):
+    alloc_locals
+    local exp : felt
+    %{
+        from math import exp
+        from starkware.cairo.common.math_utils import assert_integer, as_int
+        
+        assert_integer(ids.value)
+        _value = as_int(ids.value, PRIME)
+        
+        # unscale value
+        u_value = _value / (10 ** 27)
+        
+        # calc
+        i_exp = exp(u_value)
+            
+        # scale exp
+        s_exp_times_10 = i_exp * (10 ** 28)
+        
+        if s_exp_times_10 % 10 >= 5:
+            s_exp_times_10 += 10
+        s_exp = s_exp_times_10 // 10
+
+        ids.exp = int(s_exp)
+
+        assert 0 <= ids.exp < range_check_builtin.bound
+    %}
+    return (res=exp)
+end
+
+@external
+func tester{
+        range_check_ptr
+    }(x: felt, y: felt) -> (res: felt):
+    let res: felt = divide_decimal_round_precise(x, y)
+    return(res)
+end
+
+@external
 func sqrt_precise{
         range_check_ptr
     }(value: felt) -> (root: felt):
@@ -118,10 +158,11 @@ func sqrt_precise{
     return(root)
 end
 
+@external
 func std_normal{
         range_check_ptr
     }(x: felt) -> (res: felt):
-    let (x_div_2, r) = safe_div(x, 2)
+    let (x_div_2, _) = safe_div(x, 2)
     let (x_and_half) = multiply_decimal_round_precise(x, x_div_2)
     let (x_exp) = exp(-1 * x_and_half)
     let (res) = divide_decimal_round_precise(x_exp, SQRT_TWOPI)
@@ -135,12 +176,13 @@ func _std_normal_cdf_prob_helper{
         last_div: felt,
         t1: felt
     ) -> (res: felt):
-    let add_res: felt = safe_add(last_div, to_add)
-    let mul_res: felt = safe_mul(add_res, 10 ** 7)
+    let add_res: felt = last_div + to_add
+    let mul_res: felt = add_res * 10 ** 7
     let (res, r) = safe_div(mul_res, t1)
     return (res)
 end
 
+@external
 func std_normal_cdf{
         range_check_ptr
     }(x: felt) -> (res: felt):
@@ -160,9 +202,9 @@ func std_normal_cdf{
 
     let abs_x: felt = abs_value(x)
     let abs_x_mul: felt = multiply_decimal_round_precise(2315419, abs_x)
-    let (local t1: felt) = safe_add(10 ** 7, abs_x_mul)
+    local t1: felt = 10 ** 7 + abs_x_mul
 
-    let x_over_2: felt = safe_div(x, 2)
+    let (x_over_2, _) = safe_div(x, 2)
     let exponent: felt = multiply_decimal_round_precise(x, x_over_2)
 
     let exp_exponent: felt = exp(exponent)
@@ -174,14 +216,14 @@ func std_normal_cdf{
     let third_div: felt = _std_normal_cdf_prob_helper(17814780, second_div, t1)
     let fourth_div: felt = _std_normal_cdf_prob_helper(-3565638, third_div, t1)
     
-    let inter_add: felt = safe_add(fourth_div, 3193815)
-    let inter_mul: felt = safe_mul(inter_add, 10 ** 7)
-    let prob_num: felt = safe_mul(inter_mul, d)
+    let inter_add: felt = fourth_div + 3193815
+    let inter_mul: felt = inter_add * 10 ** 7
+    let prob_num: felt = inter_mul * d
     let (local prob, r_prob) = safe_div(prob_num, t1)
 
     let is_x_negative: felt = is_le(x, -1)
     if is_x_negative == 0:
-        let _addition: felt = safe_add(10 ** 14, -1 * prob)
+        let _addition: felt = 10 ** 14 - prob
         let f_prob: felt = divide_decimal_round_precise(_addition, 10 ** 14)
         return(f_prob)
     else:
@@ -203,8 +245,10 @@ func d1d2{
         d1: felt,
         d2: felt
     ):
-
     alloc_locals
+
+    # make sure every input except rate is unsigned (i.e. +ve)
+
 
     let tA_min: felt = is_le(tAnnualised, MIN_T_ANNUALISED - 1)
     if tA_min == 1:
@@ -218,8 +262,8 @@ func d1d2{
 
     # calc v2t
     let v_sq: felt = multiply_decimal_round_precise(volatility, volatility)
-    let v_sq_over_2: felt = safe_div(v_sq, 2)
-    let v_plus_rate: felt = safe_add(v_sq_over_2, rate)
+    let (v_sq_over_2, _) = safe_div(v_sq, 2)
+    let v_plus_rate: felt = v_sq_over_2 + rate
     let (local v2t: felt) = multiply_decimal_round_precise(v_plus_rate, tAnnualised)
 
     let sqrt_tA: felt = sqrt_precise(tAnnualised)
@@ -271,7 +315,7 @@ func gamma{
     ) -> (
         _gamma: felt
     ):
-    alloc_locals
+    alloc_locals    
 
     let (local d1, _) = d1d2(tAnnualised, volatility, spot, strike, rate)
     let (local s_n_d1: felt) = std_normal(d1)
@@ -385,7 +429,7 @@ func optionPrices{
 
     let is_nd2_le_nd1: felt  = is_le(strikeN_d2, spotN_d1)
     if is_nd2_le_nd1 == 1:
-        let (local _call: felt) = spotN_d1 - strikeN_d2 # replace this with safe add
+        let _call: felt = spotN_d1 - strikeN_d2 # replace this with safe add
         let inter_put: felt = safe_add(_call, strike_pv)
         let _is_spot_le_put: felt = is_le(spot, inter_put)
         if _is_spot_le_put == 1:
