@@ -7,7 +7,11 @@ from starkware.cairo.common.math_cmp import (
     is_not_zero, is_nn, is_le, is_nn_le, is_in_range, is_le_felt
 )
 from starkware.cairo.common.math import (
-    assert_nn, abs_value, sqrt, signed_div_rem
+    assert_nn, abs_value, sqrt, signed_div_rem, assert_le, assert_not_equal
+)
+
+from starkware.cairo.common.pow import (
+    pow
 )
 from contracts.safe_math import (
     safe_add, safe_mul, safe_div, multiply_decimal_round_precise, divide_decimal_round_precise, check_rc_bound
@@ -24,7 +28,7 @@ const PRECISION = 10 ** 18
 const MIN_EXP = -64 * HIGH_PRECISION
 const MAX_EXP = 100 * HIGH_PRECISION
 const SQRT_TWOPI = 2506628274631000502415765285
-
+const LN_2_PRECISE = 693147180559945309417232122
 const MIN_CDF_STD_DIST_INPUT = HIGH_PRECISION_DIV_10 * -45  # -4.5 
 const MAX_CDF_STD_DIST_INPUT = HIGH_PRECISION_TIMES_10
 
@@ -70,73 +74,128 @@ func ln{range_check_ptr}(value: felt) -> (res: felt):
     end
 end
 
-@external
-func exp{range_check_ptr}(value: felt) -> (res: felt):
+
+func _exp_helper{range_check_ptr}(last_t:felt, r: felt, i: felt) -> (t: felt, break: felt):
     alloc_locals
-    local exp : felt
-    %{
-        from math import exp
-        from starkware.cairo.common.math_utils import assert_integer, as_int
-        
-        assert_integer(ids.value)
-        _value = as_int(ids.value, PRIME)
-        
-        # unscale value
-        u_value = _value / (10 ** 27)
-        
-        # calc
-        i_exp = exp(u_value)
-            
-        # scale exp
-        s_exp_times_10 = i_exp * (10 ** 28)
-        
-        if s_exp_times_10 % 10 >= 5:
-            s_exp_times_10 += 10
-        s_exp = s_exp_times_10 // 10
 
-        ids.exp = int(s_exp)
+    let (ri, _) = safe_div(r, i)
+    let ri_times_last_t: felt = multiply_decimal_round_precise(ri, last_t)
+    local t: felt = ri_times_last_t + HIGH_PRECISION
 
-        assert 0 <= ids.exp < range_check_builtin.bound
-    %}
-    return (res=exp)
+    # check eq
+    let is_neq = t - last_t
+    if is_neq == 0:
+        return (t, 1)
+    else:
+        return (t, 0)
+    end
 end
 
-# @external
-# func exp{range_check_ptr}(value: felt) -> (res: felt):
-#     alloc_locals
-    
-#     if value == 0:
-#         return (HIGH_PRECISION)
-#     end
+@external
+func _exp{range_check_ptr}(x: felt) -> (res: felt):
+    alloc_locals
 
-    
+    if x == 0:
+        return (HIGH_PRECISION)
+    end
 
-#     %{
-#         from math import exp
-#         from starkware.cairo.common.math_utils import assert_integer, as_int
-        
-#         assert_integer(ids.value)
-#         _value = as_int(ids.value, PRIME)
-        
-#         # unscale value
-#         u_value = _value / (10 ** 27)
-        
-#         # calc
-#         i_exp = exp(u_value)
-            
-#         # scale exp
-#         s_exp_times_10 = i_exp * (10 ** 28)
-        
-#         if s_exp_times_10 % 10 >= 5:
-#             s_exp_times_10 += 10
-#         s_exp = s_exp_times_10 // 10
+    # this checks for -ve x as well
+    assert_le(x, MAX_EXP)
 
-#         ids.exp = int(s_exp)
+    # r
+    let k: felt = divide_decimal_round_precise(x, LN_2_PRECISE)
+    let (local k_unprecise, _ ) = safe_div(k, HIGH_PRECISION)
+    let (local p: felt) = pow(2, k_unprecise)
+    let k_unprecise_mul_ln: felt = k_unprecise * LN_2_PRECISE
+    local r: felt = x - k_unprecise_mul_ln
 
-#         assert 0 <= ids.exp < range_check_builtin.bound
-#     %}
-#     return (res=exp)
-# end
+    # iterate
+    let (t, b) = _exp_helper(HIGH_PRECISION, r, 16)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 15)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 14)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 13)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 12)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 11)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 10)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 9)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 8)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 7)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 6)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 5)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 4)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 3)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 2)
+    if b == 1:
+        return (p * t)
+    end
+    let (t, b) = _exp_helper(t, r, 1)
+    if b == 1:
+        return (p * t)
+    end
+
+    return (p*t)
+
+end
+
+@external
+func exp{range_check_ptr}(x: felt) -> (res: felt):
+    let x_nn: felt = is_nn(x)
+    if x_nn == 1:
+        let (res: felt) = _exp(x)
+        return (res)
+    end
+
+    let x_less_min: felt = is_le(x, MIN_EXP-1)
+    if x_less_min == 1:
+        return (0)
+    end
+
+    let (inter_res: felt) = _exp(x*-1)
+    let (res: felt) = divide_decimal_round_precise(HIGH_PRECISION, inter_res)
+    return (res)
+end
 
 @external
 func tester{
@@ -150,15 +209,6 @@ end
 func sqrt_precise{
         range_check_ptr
     }(value: felt) -> (root: felt):
-    # should not be -ve
-    # assert_nn(value)
-    # check_rc_bound(value)
-
-    # let x: felt = 1809251394333065606848661391547535052811553607665798349986546028067936010230
-    # # let d: felt = multiply_decimal_round_precise(x, -1*x)
-    
-    # return(x * 100)
-
     let value_times_precision: felt = safe_mul(value, HIGH_PRECISION)
     # let (f, d) = signed_div_rem(value * HIGH_PRECISION, 2, 2 ** 127 - 1)
     let root: felt = sqrt(value_times_precision)
@@ -215,6 +265,7 @@ func std_normal_cdf{
     let exponent: felt = multiply_decimal_round_precise(x, x_over_2)
 
     let exp_exponent: felt = exp(exponent)
+
     let d: felt = divide_decimal_round_precise(3989423, exp_exponent)
 
     # calc prob
@@ -279,7 +330,7 @@ func d1d2{
     let log: felt = ln(spot_over_strike)
 
     # calc d1
-    let log_plus_v2: felt = safe_add(log, v2t)
+    let log_plus_v2: felt = log + v2t
     let (local d1: felt) = divide_decimal_round_precise(log_plus_v2, vt_sqrt)
 
     # calc d2
@@ -302,10 +353,9 @@ func delta{
         put_delta: felt
     ):
     alloc_locals
-
     let (local d1, _) = d1d2(tAnnualised, volatility, spot, strike, rate)
     let (local call_delta: felt) = std_normal_cdf(d1)
-    let put_delta: felt = safe_add(call_delta, -1 * HIGH_PRECISION)
+    let put_delta: felt = call_delta - HIGH_PRECISION
     return (call_delta, put_delta)
 end
 
@@ -437,7 +487,7 @@ func optionPrices{
     let is_nd2_le_nd1: felt  = is_le(strikeN_d2, spotN_d1)
     if is_nd2_le_nd1 == 1:
         let _call: felt = spotN_d1 - strikeN_d2 # replace this with safe add
-        let inter_put: felt = safe_add(_call, strike_pv)
+        let inter_put: felt = _call + strike_pv
         let _is_spot_le_put: felt = is_le(spot, inter_put)
         if _is_spot_le_put == 1:
             let put: felt = inter_put - spot # replace this with safe add
