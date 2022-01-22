@@ -22,6 +22,7 @@ const HIGH_PRECISION_TIMES_10 = 10 ** 28
 const PRECISION = 10 ** 18
 
 const MIN_EXP = -64 * HIGH_PRECISION
+const MAX_EXP = 100 * HIGH_PRECISION
 const SQRT_TWOPI = 2506628274631000502415765285
 
 const MIN_CDF_STD_DIST_INPUT = HIGH_PRECISION_DIV_10 * -45  # -4.5 
@@ -100,36 +101,42 @@ func exp{range_check_ptr}(value: felt) -> (res: felt):
     return (res=exp)
 end
 
-@external
-func exp{range_check_ptr}(value: felt) -> (res: felt):
-    alloc_locals
-    local exp : felt
-    %{
-        from math import exp
-        from starkware.cairo.common.math_utils import assert_integer, as_int
+# @external
+# func exp{range_check_ptr}(value: felt) -> (res: felt):
+#     alloc_locals
+    
+#     if value == 0:
+#         return (HIGH_PRECISION)
+#     end
+
+    
+
+#     %{
+#         from math import exp
+#         from starkware.cairo.common.math_utils import assert_integer, as_int
         
-        assert_integer(ids.value)
-        _value = as_int(ids.value, PRIME)
+#         assert_integer(ids.value)
+#         _value = as_int(ids.value, PRIME)
         
-        # unscale value
-        u_value = _value / (10 ** 27)
+#         # unscale value
+#         u_value = _value / (10 ** 27)
         
-        # calc
-        i_exp = exp(u_value)
+#         # calc
+#         i_exp = exp(u_value)
             
-        # scale exp
-        s_exp_times_10 = i_exp * (10 ** 28)
+#         # scale exp
+#         s_exp_times_10 = i_exp * (10 ** 28)
         
-        if s_exp_times_10 % 10 >= 5:
-            s_exp_times_10 += 10
-        s_exp = s_exp_times_10 // 10
+#         if s_exp_times_10 % 10 >= 5:
+#             s_exp_times_10 += 10
+#         s_exp = s_exp_times_10 // 10
 
-        ids.exp = int(s_exp)
+#         ids.exp = int(s_exp)
 
-        assert 0 <= ids.exp < range_check_builtin.bound
-    %}
-    return (res=exp)
-end
+#         assert 0 <= ids.exp < range_check_builtin.bound
+#     %}
+#     return (res=exp)
+# end
 
 @external
 func tester{

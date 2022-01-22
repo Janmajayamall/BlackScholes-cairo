@@ -36,7 +36,7 @@ async def test_increase_balance():
     #     rate=(3 * 10 ** 25)
     # ).invoke()
     d = await contract.exp(
-        value=100000000000000000,
+        value=10 ** 27,
     ).invoke()
     print(d)
     assert False
