@@ -18,8 +18,7 @@ from contracts.safe_math import (
 )
 
 const RC_BOUND = 2 ** 128
-# (2 ** 128) // 2
-const DIV_BOUND = 170141183460469231731687303715884105728
+const DIV_BOUND = 170141183460469231731687303715884105728  # (2 ** 128) // 2
 const HIGH_PRECISION = 10 ** 27
 const HIGH_PRECISION_DIV_10 = 10 ** 26
 const HIGH_PRECISION_TIMES_10 = 10 ** 28
@@ -254,7 +253,7 @@ func std_normal_cdf{
 
     let max_return: felt = is_le(MAX_CDF_STD_DIST_INPUT + 1, x)
     if max_return == 1:
-        return(0)
+        return(HIGH_PRECISION)
     end
 
     let abs_x: felt = abs_value(x)
@@ -370,7 +369,7 @@ func gamma{
 		strike: felt,
 		rate: felt
     ) -> (
-        _gamma: felt
+        gamma: felt
     ):
     alloc_locals    
 
@@ -396,7 +395,7 @@ func vega{
 		strike: felt,
 		rate: felt
     ) -> (
-        _vega: felt
+        vega: felt
     ):
     alloc_locals
     let (local d1, _) = d1d2(tAnnualised, volatility, spot, strike, rate)
@@ -441,18 +440,43 @@ func rho{
 end
 
 
-# @external 
-# func theta{
-#         range_check_ptr
-#     }(
-# 		tAnnualised: felt,
-#         volatility: felt,
-#         spot: felt,
-#         strike: felt,
-#         rate: felt
-#   ) -> (call_theta: felt, put_theta: felt)
+@external 
+func theta{
+        range_check_ptr
+    }(
+		tAnnualised: felt,
+        volatility: felt,
+        spot: felt,
+        strike: felt,
+        rate: felt
+  ) -> (call_theta: felt, put_theta: felt)
+    alloc_locals
+    let (local d1, local d2) = d1d2(tAnnualised, volatility, spot, strike, rate)
     
-# end
+    # first half
+    let spot_mul_vol: felt = multiply_decimal_round_precise(spot, volatility)
+    let n_d1: felt = std_normal(d1)
+    let (local first_half_num: felt) = multiply_decimal_round_precise(spot_mul_vol, n_d1)
+    let sqrt_t: felt = sqrt_precise(tAnnualised)
+    let (local first_half: felt) = divide_decimal_round_precise(first_half_num, 2 * sqrt_t)
+
+    # second half
+    let (local r_mul_strike: felt) = multiply_decimal_round_precise(rate, strike)
+    let r_mul_tA: felt = multiply_decimal_round_precise(rate, tAnnualised)
+    let exp_r_tA: felt = exp(-1 * r_mul_tA)
+    let (local r_strike_exp_rtA: felt) = multiply_decimal_round_precise(r_mul_strike, exp_r_tA)
+    
+    # call second half
+    let cdf_d2: felt = std_normal_cdf(d2)
+    let call_second_half: felt = multiply_decimal_round_precise(r_strike_exp_rtA, cdf_d2)
+    let (local _call_theta: felt) = first_half - call_second_half 
+
+    let cdf_d2_n: felt = std_normal_cdf(-1 * d2)
+    let (put_second_half: felt) = multiply_decimal_round_precise(r_strike_exp_rtA, cdf_d2_n)
+    let (local _put_theta: felt) = first_half + put_second_half
+
+    return (_call_theta, _put_theta)
+end
 
 @external
 func optionPrices{
@@ -472,8 +496,8 @@ func optionPrices{
     let (local d1, local d2) = d1d2(tAnnualised, volatility, spot, strike, rate)
 
     # calc strikePv
-    let rate_mul_tA: felt = multiply_decimal_round_precise(-1*rate, tAnnualised)
-    let exp_rate_mul_tA: felt = exp(rate_mul_tA)
+    let rate_mul_tA: felt = multiply_decimal_round_precise(rate, tAnnualised)
+    let exp_rate_mul_tA: felt = exp(-1 * rate_mul_tA)
     let (local strike_pv: felt) = multiply_decimal_round_precise(strike, exp_rate_mul_tA)
 
     # calc spotNd1
